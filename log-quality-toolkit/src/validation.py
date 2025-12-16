@@ -5,6 +5,11 @@ Defines the expected structure and validation rules for authentication/security 
 """
 
 from typing import Dict, Any, Optional
+from datetime import datetime
+
+class TimestampParseError(Exception):
+    """Custom exception for timestamp parsing errors."""
+    pass
 
 
 # ============================================================================
@@ -99,7 +104,19 @@ def validate_timestamp(value: str) -> bool:
         True if valid, False otherwise.
     """
     # TODO: Implement using datetime.strptime() with formats from schema
-    pass
+    if not value or not isinstance(value, str):
+        return TimestampParseError(f'Timestamp must not be a non-empty string. Got: {value}')
+
+    formats = AUTH_LOG_SCHEMA['timestamp']['formats']
+
+    for fmt in formats:
+        try:
+            datetime.strptime(value, fmt)
+            return True
+        except ValueError:
+            continue
+
+    raise TimestampParseError(f'Timestamp does not match any known formats: {formats}')
 
 
 def validate_user(value: str) -> bool:
