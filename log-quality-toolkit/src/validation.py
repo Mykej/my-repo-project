@@ -135,6 +135,7 @@ def validate_user(value: str) -> bool:
     """
     # TODO: Check min/max length from schema constraints
     try:
+        #  Check if value is a string and meets length constraints
         if isinstance(value, str):
             min_length = AUTH_LOG_SCHEMA['user']['constraints']['min_length']
             max_length = AUTH_LOG_SCHEMA['user']['constraints']['max_length']
