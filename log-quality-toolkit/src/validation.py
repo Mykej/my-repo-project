@@ -11,6 +11,10 @@ class TimestampParseError(Exception):
     """Custom exception for timestamp parsing errors."""
     pass
 
+class SchemaError(Exception):
+    """Custom exception for schema validation errors."""
+    pass
+
 
 # ============================================================================
 # AUTH LOG SCHEMA
@@ -130,6 +134,15 @@ def validate_user(value: str) -> bool:
         True if valid, False otherwise.
     """
     # TODO: Check min/max length from schema constraints
+    try:
+        if isinstance(value, str):
+            min_length = AUTH_LOG_SCHEMA['user']['constraints']['min_length']
+            max_length = AUTH_LOG_SCHEMA['user']['constraints']['max_length']
+            if min_length <= len(value) <= max_length:
+                return True
+    except SchemaError:
+        print(f'{value} is either not a string or does not meet length constraints.')
+
     pass
 
 
