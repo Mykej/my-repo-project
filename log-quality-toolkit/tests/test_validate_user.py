@@ -13,13 +13,13 @@ tests = [
     "charlie",
     "",
     "a" * 257,  # Too long
+    12345,      # Not a string
 ]
 
 for u in tests:
     try:
         result = validate_user(u)
         print(f"{u!r}: OK -> {result}")
-    except SchemaError as e:
-        print(f"{u!r}: SchemaError -> {e}")
-    except Exception as e:
-        print(f"{u!r}: Error -> {e}")
+    except SchemaError:
+        print(f"{u!r}: SchemaError -> {u} is either not a string or does not meet length constraints.")
+

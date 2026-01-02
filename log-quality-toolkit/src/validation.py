@@ -134,17 +134,20 @@ def validate_user(value: str) -> bool:
         True if valid, False otherwise.
     """
     # TODO: Check min/max length from schema constraints
-    try:
-        #  Check if value is a string and meets length constraints
-        if isinstance(value, str):
-            min_length = AUTH_LOG_SCHEMA['user']['constraints']['min_length']
-            max_length = AUTH_LOG_SCHEMA['user']['constraints']['max_length']
-            if min_length <= len(value) <= max_length:
-                return True
-    except SchemaError:
-        print(f'{value} is either not a string or does not meet length constraints.')
 
-    pass
+        #  Check if value is a string and meets length constraints
+    if not isinstance(value, str):
+        raise SchemaError(f'User must be a string, got {type(value)}')
+
+    min_length = AUTH_LOG_SCHEMA['user']['constraints']['min_length']
+    max_length = AUTH_LOG_SCHEMA['user']['constraints']['max_length']
+
+    if not min_length <= len(value) <= max_length:
+        raise SchemaError(
+            f'User must be between {min_length} and {max_length} characters long.'
+            f' Got length {len(value)}.'
+        )
+    return True
 
 
 def validate_required_fields(record: Dict[str, Any]) -> bool:
@@ -158,4 +161,9 @@ def validate_required_fields(record: Dict[str, Any]) -> bool:
         True if all required fields are present, False otherwise.
     """
     # TODO: Iterate over AUTH_LOG_SCHEMA, check record[field] is not None for required=True fields
-    pass
+
+    for field, props in AUTH_LOG_SCHEMA.items():
+        if props['required'] is True:
+            if field not in record or record[field] is None:
+                raise SchemaError(f'Missing required field: {field}')
+    return True
