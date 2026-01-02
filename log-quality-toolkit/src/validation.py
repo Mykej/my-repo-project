@@ -4,22 +4,76 @@ Auth Log Schema & Validation
 Defines the expected structure and validation rules for authentication/security logs.
 """
 
+import json
 from typing import Dict, Any, Optional
 from datetime import datetime
+
 
 class TimestampParseError(Exception):
     """Custom exception for timestamp parsing errors."""
     pass
+
 
 class SchemaError(Exception):
     """Custom exception for schema validation errors."""
     pass
 
 
+class FileFormatError(Exception):
+    """
+    Custom exception for file format errors.
+
+    Raised when a file cannot be read or parsed (e.g., malformed JSON, corrupt CSV, wrong encoding).
+
+    Attributes:
+        file_path: Path to the problematic file
+        message: Human-readable error message
+        error_code: Machine-parseable error type (e.g., 'json_decode', 'csv_parse', 'encoding')
+        original: The original caught exception (for chaining)
+
+    Example:
+        try:
+            data = json.load(file)
+        except json.JSONDecodeError as e:
+            raise FileFormatError(
+                file_path="path/to/file.json",
+                message="Invalid JSON syntax",
+                error_code="json_decode",
+                original=e
+            ) from e
+    """
+    # TODO: Implement __init__ to accept and store file_path, message, error_code, original
+    # TODO: Override __str__ to produce a readable message like:
+    #       "FileFormatError [json_decode]: path/to/file.json - Invalid JSON syntax"
+    # TODO: Consider adding a to_dict() method for serializing to the JSON quality report
+
+    def __init__(self, file_path: str, message: str, error_code: str = None, original: Exception = None):
+        self.file_path = file_path
+        self.message = message
+        self.error_code = error_code
+        self.original = original
+        super().__init__(
+            f'FileFormatError [{error_code}]: {file_path} - {message}')
+
+    def to_dict(self):
+        """Convert to dictionary for JSON report serialization."""
+        return {
+            'file': self.file_path,
+            'kind': 'file_format',
+            'error_code': self.error_code,
+            'message': self.message,
+            'original_error': str(self.original) if self.original else None
+        }
+
+
+# class DataQualityError(Exception):
+#     """Custom exception for data quality issues."""
+#     pass
+
+
 # ============================================================================
 # AUTH LOG SCHEMA
 # ============================================================================
-
 AUTH_LOG_SCHEMA: Dict[str, Dict[str, Any]] = {
     # FULLY IMPLEMENTED FIELDS
     # -------------------------
@@ -82,7 +136,7 @@ AUTH_LOG_SCHEMA: Dict[str, Dict[str, Any]] = {
         "required": False,
         "type": "enum",
         "description": "The outcome of the auth attempt (e.g., 'success', 'failure', 'blocked').",
-        "allowed_values": ["success" , "failure", "blocked"]
+        "allowed_values": ["success", "failure", "blocked"]
     },
     # Hints:
     # - required: False (it's optional)
@@ -120,7 +174,8 @@ def validate_timestamp(value: str) -> bool:
         except ValueError:
             continue
 
-    raise TimestampParseError(f'Timestamp does not match any known formats: {formats}')
+    raise TimestampParseError(
+        f'Timestamp does not match any known formats: {formats}')
 
 
 def validate_user(value: str) -> bool:
@@ -135,7 +190,7 @@ def validate_user(value: str) -> bool:
     """
     # TODO: Check min/max length from schema constraints
 
-        #  Check if value is a string and meets length constraints
+    #  Check if value is a string and meets length constraints
     if not isinstance(value, str):
         raise SchemaError(f'User must be a string, got {type(value)}')
 
@@ -167,3 +222,89 @@ def validate_required_fields(record: Dict[str, Any]) -> bool:
             if field not in record or record[field] is None:
                 raise SchemaError(f'Missing required field: {field}')
     return True
+
+
+# ============================================================================
+# FileFormatError USAGE PSEUDOCODE (for src/loader.py)
+# ============================================================================
+
+"""
+PSEUDOCODE: Where FileFormatError gets raised in loader.py
+
+In src/loader.py, you'll have a load_logs(file_path) function that looks roughly like:
+
+    def load_logs(file_path: str) -> pd.DataFrame:
+        '''Load logs from CSV or JSON file.'''
+        try:
+            if file_path.endswith('.csv'):
+                # TODO: Try to read CSV
+                # Catch pd.errors.ParserError -> raise FileFormatError(..., 'csv_parse')
+                # Catch UnicodeDecodeError -> raise FileFormatError(..., 'encoding')
+                # Catch FileNotFoundError -> raise FileFormatError(..., 'file_not_found')
+                df = pd.read_csv(file_path)
+                return df
+            
+            elif file_path.endswith('.json') or file_path.endswith('.jsonl'):
+                # TODO: Try to read JSON/JSONL
+                # Catch json.JSONDecodeError -> raise FileFormatError(..., 'json_decode')
+                # Catch FileNotFoundError -> raise FileFormatError(..., 'file_not_found')
+                with open(file_path) as f:
+                    data = json.load(f)
+                df = pd.DataFrame(data)
+                return df
+            
+            else:
+                # TODO: Unsupported file type
+                raise FileFormatError(
+                    file_path=file_path,
+                    message=f"Unsupported file type: {file_path}",
+                    error_code="unsupported_format"
+                )
+        
+        except FileFormatError:
+            # Re-raise our custom exceptions as-is
+            raise
+        
+        except FileNotFoundError as e:
+            # TODO: Wrap file-not-found errors
+            raise FileFormatError(
+                file_path=file_path,
+                message=f"File not found",
+                error_code="file_not_found",
+                original=e
+            ) from e
+        
+        except Exception as e:
+            # TODO: Catch any other unexpected error and wrap
+            raise FileFormatError(
+                file_path=file_path,
+                message=f"Unexpected error reading file",
+                error_code="unknown",
+                original=e
+            ) from e
+
+
+AT A HIGHER LEVEL (in your pipeline or notebook), catching FileFormatError:
+
+    def load_all_logs_gracefully(file_list):
+        '''Load multiple files, skip bad ones.'''
+        all_data = []
+        errors = []
+        
+        for file_path in file_list:
+            try:
+                df = load_logs(file_path)  # Raises FileFormatError on failure
+                all_data.append(df)
+            
+            except FileFormatError as e:
+                # TODO: Record the error for the quality report
+                errors.append(e.to_dict())  # Requires to_dict() method
+                logging.warning(f"Skipping {file_path}: {e}")
+                # Continue with next file instead of crashing
+                continue
+        
+        # Combine all successful dataframes
+        final_df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        
+        return final_df, errors
+"""
