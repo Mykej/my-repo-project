@@ -5,7 +5,8 @@ Defines the expected structure and validation rules for authentication/security 
 """
 
 import json
-from typing import Dict, Any, Optional
+import pandas as pd
+from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 
 
@@ -64,6 +65,11 @@ class FileFormatError(Exception):
             'message': self.message,
             'original_error': str(self.original) if self.original else None
         }
+
+# Inherits from SchemaError
+class user_error(SchemaError):
+    """Custom exception that defines user generated errors."""
+    pass
 
 
 # class DataQualityError(Exception):
@@ -192,13 +198,13 @@ def validate_user(value: str) -> bool:
 
     #  Check if value is a string and meets length constraints
     if not isinstance(value, str):
-        raise SchemaError(f'User must be a string, got {type(value)}')
+        raise user_error(f'User must be a string, got {type(value)}')
 
     min_length = AUTH_LOG_SCHEMA['user']['constraints']['min_length']
     max_length = AUTH_LOG_SCHEMA['user']['constraints']['max_length']
 
     if not min_length <= len(value) <= max_length:
-        raise SchemaError(
+        raise user_error(
             f'User must be between {min_length} and {max_length} characters long.'
             f' Got length {len(value)}.'
         )
@@ -223,6 +229,130 @@ def validate_required_fields(record: Dict[str, Any]) -> bool:
                 raise SchemaError(f'Missing required field: {field}')
     return True
 
+# ============================================================================
+# VALIDATE AND CLEAN DATAFRAME
+# ============================================================================
+
+def validate_and_clean(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Validate and clean a DataFrame of auth logs using the schema.
+    
+    Loops through each row and applies validation functions. Quarantines bad rows
+    and collects quality metrics.
+    
+    Args:
+        df: DataFrame with auth log data
+    
+    Returns:
+        Tuple of (clean_df, issues_dict)
+        - clean_df: DataFrame with only valid rows
+        - issues_dict: Dict with counts/summaries:
+            - total_rows: int
+            - bad_rows: int
+            - bad_rows_list: list of (index, reason) tuples
+            - timestamp_errors: int
+            - missing_required_fields: int
+            - null_rates: dict with null % per column
+    
+    TODO: Step-by-step implementation below
+    """
+    
+    # TODO Step 1: Initialize tracking structures
+    #   - clean_rows: list to accumulate valid rows
+    #   - bad_rows_list: list of (row_index, error_message) tuples for quarantined rows
+    #   - error_counts: dict to count error types (e.g., 'timestamp_errors': 0, 'schema_errors': 0)
+    
+    # TODO Step 2: Loop through DataFrame rows using df.iterrows() or df.itertuples()
+    #   - For each row, extract fields: timestamp, user, src_ip, dest_host, action, event_id
+    #   - Build a record dict: {'timestamp': ..., 'user': ..., ...}
+    
+    # TODO Step 3: Inside the loop, validate each row using your helper functions
+    #   Try in this order:
+    #   a) validate_required_fields(record) — catches missing/None required fields
+    #      If exception: increment error_counts['missing_required_fields'], append to bad_rows_list, continue
+    #   b) validate_timestamp(record['timestamp']) — catches invalid timestamp formats
+    #      If exception: increment error_counts['timestamp_errors'], append to bad_rows_list, continue
+    #   c) validate_user(record['user']) — catches invalid user strings
+    #      If exception: increment error_counts['schema_errors'], append to bad_rows_list, continue
+    
+    # TODO Step 4: If all validations pass, append the row (as dict or Series) to clean_rows
+    
+    # TODO Step 5: After the loop, reconstruct clean DataFrame from clean_rows
+    #   - Use pd.DataFrame(clean_rows) to rebuild, or concat
+    #   - Reset index if needed
+    
+    # TODO Step 6: Calculate quality metrics for issues_dict
+    #   - total_rows: len(df)
+    #   - clean_rows_count: len(clean_df)
+    #   - bad_rows: total_rows - clean_rows_count
+    #   - null_rates: for each column, calculate % of nulls
+    #       Hint: df.isnull().sum() / len(df) * 100
+    
+    # TODO Step 7: Build and return issues_dict
+    #   issues_dict = {
+    #       'total_rows': ...,
+    #       'clean_rows': ...,
+    #       'bad_rows': ...,
+    #       'bad_rows_list': [...],
+    #       'error_counts': {...},
+    #       'null_rates': {...}
+    #   }
+    #   return (clean_df, issues_dict)
+
+    clean_rows = []
+    bad_rows_list: List[Dict[str, any]] = [] #Create list with type annotation
+    error_counts = {
+        'missing_required_fields': 0,
+        'timestamp_errors': 0,
+        'user_errors': 0,
+        'src_ip_errors': 0,
+        'action_errors': 0,
+        'other_schema_errors': 0
+    }
+
+    for row in df.itertuples():
+        record = {
+            # key: value
+            'timestamp': row.timestamp,
+            'user': row.user,
+            'src_ip': row.src_ip,
+            'dest_host': row.dest_host,
+            'id': row.action_id,
+            'action': row.action
+        }
+
+        try:
+            validate_required_fields(record)
+            validate_timestamp(record['timestamp'])
+            validate_user(record['user'])
+
+            clean_rows.append(record)
+
+        except SchemaError as e:
+            error_counts['missing_required_fields'] += 1
+            message = str(e)
+            field = None
+
+            if message.startswith("Missing required field:"):
+                candidate = message.split(":", 1)[1].strip()
+                if candidate in AUTH_LOG_SCHEMA:
+                    field = candidate
+
+            bad_rows_list.append({
+                'row_index': row.Index,
+                'field': field,
+                'error_type': 'missing_required_fields',
+                'message': message,
+                'record_preview': {
+                    'timestamp': record.get('timestamp'),
+                    'user': record.get('user'),
+                    'src_ip': record.get('src_ip')
+                }
+            })
+
+            continue
+
+        # except 
 
 # ============================================================================
 # FileFormatError USAGE PSEUDOCODE (for src/loader.py)
