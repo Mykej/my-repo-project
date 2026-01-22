@@ -350,6 +350,21 @@ def validate_and_clean(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
                 }
             })
 
+        except TimestampParseError as e:
+            error_counts['timestamp_errors'] += 1
+            message = str(e)
+
+            bad_rows_list.append({
+                'row_index': row.Index,
+                'field': 'timestamp',
+                'error_type': 'timestamp_errors',
+                'message': message,
+                'record_preview': {
+                    'timestamp': record.get('timestamp'),
+                    'user': record.get('user'),
+                    'src_ip': record.get('src_ip')
+                }
+            })
             continue
 
         # except 
